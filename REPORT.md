@@ -110,6 +110,26 @@
 
 后端由[AnthonyCJ (github.com)](https://github.com/AnthonyCJ)进行开发，分配任务较为合理（强颜欢笑，我也不想这样啊，真的要累死了，可是我不得不一个人战斗……等我熬不住了我就去找个前端外援）。[AnthonyCJ (github.com)](https://github.com/AnthonyCJ)在`Milestones`内完成了自己的任务，并且提交的`git commit message`格式依照阿里巴巴开发规范。
 
+* issue
+  * refactor(Spring Boot): 重构设计，将后端Spring MVC项目重构为Spring Boot项目，明确变更细节，正确搭建框架
+    1. 添加 SpringBoot 相关依赖（boot-starter-web, boot-starter-test等）
+    2. 配置 SpringBoot 应用
+       web.xml和SpringMVC配置文件变更为启动类注解
+    3. 配置 SoringBoot 相关参数
+       在application.yml中配置，注意区分开发环境和生产环境
+    4. 迁移 SpringMVC 的代码
+       注意一些细节上的变动
+  * feat(Pojo): 完成游戏后端实现逻辑的设计，底层数据结构的设计，数据类型的设计与实现
+  * feat(Service, Controller): 新增PlayerController相关功能，编写对应的接口，并撰写部分接口文档
+  * feat(Mapper, Service): 编写Mapper层接口，实现实体类的Service服务
+  * feat(Mapper, Service, Pojo): 编写有关游戏功能实现与逻辑的单元测试，并完成测试
+  * feat(Service, Controller): 完成Service层的开发，补全Controller层相关服务
+  * feat(Service): 完成后端接口的编写，在后端本地使用后端开发环境对后端接口进行测试，完成Apifox接口文档的编写
+  * chore(CI/CD): 添加CI/CD流程
+* 里程碑事件
+  * 搭建后端开发框架以及CI/CD流程
+  * 完成后端功能测试、后端接口编写与测试
+
 
 
 <br><br>
