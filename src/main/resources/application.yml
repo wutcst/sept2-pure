@@ -1,0 +1,20 @@
+# 服务配置
+server:
+  servlet:
+    context-path: /zuul
+spring:
+  profiles:
+    # 默认使用dev，服务器启动需要使用prod配置
+    active: dev
+  # 数据源配置
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+    # Druid连接池配置
+    type: com.alibaba.druid.pool.DruidDataSource
+    initialSize: 5
+    minIdle: 5
+    maxActive: 50
+    maxWait: 60000
+    timeBetweenEvictionRunsMillis: 60000
+    minEvictableIdleTimeMillis: 300000
