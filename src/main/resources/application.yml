@@ -5,7 +5,7 @@ server:
 spring:
   profiles:
     # 默认使用dev，服务器启动需要使用prod配置
-    active: dev
+    active: prod
   # 数据源配置
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver

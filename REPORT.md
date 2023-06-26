@@ -106,7 +106,7 @@
 
 <br>
 
-#### 3.1.3 基于issue进行工作任务管理及分配
+#### 3.1.4 基于issue进行工作任务管理及分配
 
 后端由[AnthonyCJ (github.com)](https://github.com/AnthonyCJ)进行开发，分配任务较为合理（强颜欢笑，我也不想这样啊，真的要累死了，可是我不得不一个人战斗……等我熬不住了我就去找个前端外援）。[AnthonyCJ (github.com)](https://github.com/AnthonyCJ)在`Milestones`内完成了自己的任务，并且提交的`git commit message`格式依照阿里巴巴开发规范。
 
@@ -130,8 +130,421 @@
   * 搭建后端开发框架以及CI/CD流程
   * 完成后端功能测试、后端接口编写与测试
 
+![image-20230625144955222](C:/Users/pure/AppData/Roaming/Typora/typora-user-images/image-20230625144955222.png)
+
+![image-20230625145051985](C:/Users/pure/AppData/Roaming/Typora/typora-user-images/image-20230625145051985.png)
+
+<br>
+
+#### 3.1.5 开发分支规定及开发流程
+
+我创建了一个anthonycj子分支，开发时在子分支上进行开发，开发完毕后通过子分支commit并push到远程仓库，再通过master分支进行合并，最后通过github actions进行打包发布到云服务器上。
+
+<br>
+
+#### 3.1.6 配置CI/CD
+
+在github里面一直没找到设置
+
+```yml
+host: ${{ secrets.HOST }}
+user: ${{ secrets.SSH_USER }}
+key: ${{ secrets.SSH_PRIVATE_KEY }}
+```
+
+的地方，所以自动化部署一直编译失败，所以我把jar包部署在了云服务器上，通过Apifox与前端交互。
 
 
-<br><br>
+
+```yml
+# This workflow will build a Java project with Maven, and cache/restore any dependencies to improve the workflow execution time
+
+name: Java CI/CD with Maven
+
+on:
+push:
+branches: [ master ]
+pull_request:
+branches: [ master ]
+
+jobs:
+build-and-deploy:
+runs-on: ubuntu-latest
+name: Running Java ${{ matrix.java }} compile
+steps:
+# 使用checkout@v1进行CI/CD，只clone最新版本
+- uses: actions/checkout@v1
+with:
+fetch-depth: 1
+
+# 安装JDK1.8
+- name: 安装 JDK 1.8
+uses: actions/setup-java@v1
+with:
+java-version: 1.8
+
+# 缓存Maven依赖
+- name: 缓存 Maven 依赖
+uses: actions/cache@v2
+with:
+path: ~/.m2/repository
+key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+restore-keys: ${{ runner.os }}-maven-
+
+- name: mvn compile
+run: mvn compile
+
+- name: mvn package
+run: mvn -B package --file pom.xml -Dmaven.test.skip=true
+
+- name: 将 JAR 包部署到服务器
+uses: wlixcc/SFTP-Deploy-Action@v1.0
+with:
+username: ${{ secrets.SSH_USER }}
+server: ${{ secrets.HOST }}
+ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+local_path: './target/zuul.jar'
+remote_path: '/usr/local/src/zuul/zuul.jar'
+args: '-o ConnectTimeout=5'
+
+- name: 停止服务器原有服务，后台运行zuul.jar
+if: always()
+uses: fifsky/ssh-action@master
+with:
+command: |
+ps -ef | grep "zuul.jar" | grep -v grep | awk '{print $2}' | xargs kill -9
+cd /usr/local/src/zuul
+nohup java -jar zuul.jar --spring.profiles.active=prod > nohup.out 2>&1 &
+host: ${{ secrets.HOST }}
+user: ${{ secrets.SSH_USER }}
+key: ${{ secrets.SSH_PRIVATE_KEY }}
+```
+
+### 3.2 模块设计
+
+#### 3.2.1 设计整体框架
+
+后端服务整体使用`Spring Boot`框架进行开发，使用`.yml`文件进行项目配置，分为`Pojo`，`Mapper`, `Service`，`Controller`进行开发，`pojo`作为实体对象类，`Mapper`层控制与数据库交互，获取相关数据，`Service`层实现相关接口配合`Pojo`和`Mapper`层调用实现功能，`Controller`层用来处理与前端的交互，返回`Json`数据。
+
+其中`Json`数据的格式定义如下：
+
+```java
+@Data
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class ResultBean<T> implements Serializable {
+    
+    @ApiModelProperty(value="返回的状态码", example = "500701")
+    private int code;       // 状态码
+    
+    @ApiModelProperty(value="状态码对应的消息值", example = "token已失效")
+    private String msg;     // 消息值
+    
+    @ApiModelProperty(value="返回数据", example = "返回的对应数据")
+    private T data;         // 返回值
+    
+    public ResultBean(EnumResult enumResult, T data){
+        this.code=enumResult.getCode();
+        this.msg=enumResult.getMsg();
+        this.data=data;
+    }
+    public ResultBean(EnumResult enumResult){
+        this.code=enumResult.getCode();
+        this.msg=enumResult.getMsg();
+    }
+}
+```
+
+通过与前端约定的状态码以及消息值，数据进行交互，状态码与消息值的对应关系使用枚举类进行存储：
+
+```java
+public enum EnumResult {
+    SUCCESS(200200, "请求成功"),
+    INTERNAL_SERVER_ERROR(500500, "服务器内部错误"),
+    USER_REPEAT(500101, "用户名重复或未提供数据"),
+    USER_LOGIN_ERROR(500102, "用户登录失败"),
+    USER_MOVE_FAIL(500201, "用户移动失败"),
+    USER_TAKE_FAIL(500301, "不存在该物品或用户拿起该物品超重"),
+    USER_NO_HOLD_ITEM(500302, "用户未持有该物品"),
+    USER_USE_ITEM_FAIL(500303, "该物品不能被使用"),
+    ROOM_NO_EVENT(500401, "房间不含有可用事件"),
+    TEST_FAIL(500601, "您没有执行相关功能的权限"),
+    TOKEN_ERROR(500701, "token已失效"),
+    TOKEN_MISS(500702, "token不存在");
+    private int code;
+    private String msg;
+
+    EnumResult(int code, String msg) {
+        this.code = code;
+        this.msg = msg;
+    }
+}
+```
+
+#### 3.2.2 设计登录鉴权及拦截器
+
+用户的权限校验采用`JWT`技术，在调用`login`接口进行登录后，如果数据库中存在用户数据，会根据服务器的密钥信息生成一个字符串——`token`，在之后执行其他操作时，将`token`字符串附在`headers`的`authorization`中，后端会对前端的请求进行校验，通过后放行。
+
+```java
+/**
+ * 生成签名,EXPIRE_TIME(毫秒)后过期.
+ *
+ * @param userId 用户id
+ * @param username 用户名
+ * @return 加密的token
+ */
+public static String sign(Long userId, String username) {
+    try {
+        // 过期时间
+        Date date = new Date(System.currentTimeMillis() + EXPIRE_TIME);
+        // 私钥及加密算法
+        Algorithm algorithm = Algorithm.HMAC256(TOKEN_SECRET);
+        // 设置头部信息
+        Map<String, Object> header = new HashMap<>(2);
+        header.put("typ", "JWT");
+        header.put("alg", "HS256");
+        // 附带username，userId信息，生成签名，允许
+        return JWT.create()
+                .withHeader(header)
+                .withClaim("username", username)
+                .withClaim("userId", userId)
+                .withExpiresAt(date)
+                .sign(algorithm);
+    } catch (UnsupportedEncodingException e) {
+        return null;
+    }
+}
+```
+
+通过实现了`Interceptor`接口，实现了一个鉴权拦截器，用户在调用`login`和`register`接口时会予以放行，但是在调用其他接口时会被拦截器拦截，校验用户的身份以及权限。
+
+```java
+/**
+ * @author anthonycj
+ * @version 1.0
+ * @description 校验用户登录权限
+ * @date 2023/6/22 20:32
+ */
+@Component
+public class CheckInterceptor implements HandlerInterceptor {
+
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        String token = request.getHeader("Authorization");
+        if (JwtUtil.verify(token)) {
+            // 说明验证成功，允许访问资源
+            return true;
+        } else {
+            response.setCharacterEncoding("utf-8");
+            response.setContentType("application/json; charset=utf-8");
+            response.getWriter().write(JsonUtil.objToJson(new ResultBean<>(EnumResult.TOKEN_ERROR)));
+            return false;
+        }
+    }
+}
+```
+
+最后在`webConfig`类中继承`WebMvcConfigurer`，实现跨域请求以及添加拦截器，拦截路由以及过滤特定路由`login`和`register`
+
+```java
+@Configuration
+public class WebConfig implements WebMvcConfigurer {
+
+    @Autowired
+    private CheckInterceptor checkInterceptor;
+
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        // 项目中的所有接口都支持跨域
+        registry.addMapping("/**")
+                .allowedOriginPatterns("*")
+                .allowCredentials(true)
+                .allowedMethods("*")
+                .maxAge(3600);
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        // 添加鉴权拦截器，拦截所有请求，排除登录相关的API调用
+        registry.addInterceptor(checkInterceptor)
+                .addPathPatterns("/**")
+                .excludePathPatterns("/user/login", "/user/register", "/test/**",
+                        "/swagger-ui.html", "/swagger-resources/**", "/webjars/**", "/v2/**", "/swagger-ui.html/**");
+        WebMvcConfigurer.super.addInterceptors(registry);
+    }
+}
+```
+
+#### 2.2.3 设计User类
+
+`User`类的设计比较简单，用户使用唯一索引的用户名以及密码进行登录，项目比较简单所以也没有做校验以及加密，由于使用了`MyBatis Plus`因此开发`Mapper`层比较简单，我们的设计是，每一个用户对应一个`User`对象，通过这个`User`对象的`userId`属性作为`ConcurrentHashMap`的`key`，其对应的`Player`(游戏中的角色)作为`value`进行映射，因此在服务器不重启之前，游戏的角色都可以被缓存。
+
+**User.java: **
+
+```java
+/**
+ * @author anthonycj
+ * @version 1.0
+ * @description 用户实体类
+ * @date 2023/6/21 22:15
+ */
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@TableName("user")
+public class User {
+    @JsonSerialize(using = ToStringSerializer.class)
+    @TableId(type = IdType.AUTO)
+    @ApiModelProperty(value = "用户Id", hidden = true, example = "19")
+    private Long userId;
+
+    @ApiModelProperty(value = "登录用户名", example = "admin1")
+    private String userName;
+
+    @ApiModelProperty(value = "登录用户密码", example = "p@ssword")
+    private String userPassword;
+}
+```
+
+**UserServiceImpl.java:** 
+
+```java
+/**
+ * @author anthonycj
+ * @version 1.0
+ * @description UserService接口的实现类
+ * @date 2023/6/21 22:21
+ */
+@Service
+public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
+
+    @Autowired
+    private UserMapper userMapper;
+
+    /**
+     * 用户登录.
+     *
+     * @param userName 登录的用户名
+     * @param userPassword 登录的用户密码
+     * @return 若登录成功，则返回用户类，否则返回null
+     */
+    @Override
+    public User userLogin(String userName, String userPassword) {
+        User user = userMapper.selectOne(new QueryWrapper<User>().eq("user_name", userName));
+        if(user != null && userPassword != null && !"".equals(userPassword)) {
+            if(userPassword.equals(user.getUserPassword())) {
+                return user;
+            } else {
+                return null;
+            }
+        }
+        return null;
+    }
+}
+```
+
+**UserController.java: **
+
+```java
+/**
+ * @author anthonycj
+ * @version 1.0
+ * @description UserController，实现用户登录，注册等相关功能
+ * @date 2023/6/22 15:15
+ */
+@Api(tags = {"用户操作"})
+@RestController
+@RequestMapping("/user")
+public class UserController {
+
+    @Autowired
+    private UserService userService;
+
+    /**
+     * 注册用户User.
+     *
+     * @param user 需要插入数据库的用户信息，使用body传递json数据
+     * @return 若重复用户名或用户信息为空报错
+     */
+    @ApiOperation(value = "用户注册", notes = "提供用户名以及密码进行注册")
+    @ApiImplicitParam(name = "user", value = "用户注册信息Json数据", required = true, dataType = "User")
+    @PostMapping("/register")
+    public ResultBean<Object> registerUser(@RequestBody User user) {
+        if(user == null || userService.getOne(new QueryWrapper<User>().
+                eq("user_name", user.getUserName())) != null) {
+            // 说米国没有提供user或者查询到了重复的用户名，报错
+            return new ResultBean<>(EnumResult.USER_REPEAT);
+        } else {
+            // 说明请求成功
+            if(userService.save(user)) {
+                return new ResultBean<>(EnumResult.SUCCESS);
+            } else {
+                return new ResultBean<>(EnumResult.INTERNAL_SERVER_ERROR);
+            }
+        }
+    }
+
+    /**
+     * 用户登录.
+     *
+     * @param user 需要登录的用户
+     * @return 若登录成功则颁发token允许之后的鉴权，否则返回错误信息
+     */
+    @ApiOperation(value = "用户登录", notes = "提供用户名以及密码进行登录")
+    @ApiImplicitParam(name = "user", value = "用户登录信息Json数据", required = true, dataType = "User")
+    @PostMapping("/login")
+    public ResultBean<Object> tryLogin(@RequestBody User user) {
+        User tmpUser = userService.userLogin(user.getUserName(), user.getUserPassword());
+        if(tmpUser != null) {
+            // 说明登录成功，生成一个token
+            String token = JwtUtil.sign(tmpUser.getUserId(), tmpUser.getUserName());
+            return new ResultBean<>(EnumResult.SUCCESS, token);
+        } else {
+            // 登录失败
+            return new ResultBean<>(EnumResult.USER_LOGIN_ERROR);
+        }
+    }
+}
+```
+
+#### 3.2.4 设计GameMap类
+
+`GameMap`类是该游戏的地图类，其中包含了很多的`Room`，我使用了`HashMap`通过`<Long, Room>`进行映射，地图是我自己画的。使用`Spring Boot`提供的`@Bean`注解将`Maze`进行初始化，作为单例。
+
+#### 3.2.5设计Room类
+
+`Room`类为了提供房间事件(例如随机传送的房间)，定义了`Room`作为父类，含有特殊功能的房间需要继承`Room`类并实现`Event`接口，之后在`Controller`层可以通过是否实现了`Event`接口进行判断。
+
+> 此处创建房间时，考虑之后若升级项目可以同时存在多个地图以及多个房间时并且要对`Player`做持久化，因此使用了雪花算法生成全局唯一ID，使用的类型为`Long`，其实就算调用`MaBatis Plus`的自动主键生成策略也会生成`Long`类型的主键，因此肯定会碰到下述bug：
+>
+> 前端因为使用动态类型，整型的精确范围只能到53位，实测之后会类似浮点数的存储采用科学计数法，无法保证精度，导致id如果以long类型传递会在前端丢失精度。因此我在后端将long类型通过`jackson`提供的`@JsonSerialize`注解转换成`String`类型保证不丢失精度。
+
+#### 3.2.6 设计Item类
+
+Item 类拥有三个字段，分别是 id, name, weight。Item是一个典型的POJO，只有字段，不含各种逻辑，达到了解耦的目的。
+
+#### 3.2.7 设计Player类
+
+Player类，对应游戏中控制的人物，是我们这款简易游戏中的核心类，它关联着房间、物品的信息。
+
+
 
 ## 4. 前端项目概述
+
+前端主要使用 Vue、Vue-router、Ant Design Vue 等框架实现。Vue 具有响应式的数据绑定和虚拟 DOM 等特性，提供了更好的用户交互体验；Vue-router 允许我们在单页面应用中实现客户端路由；Ant Design Vue 提供了丰富的UI组件和交互样式，使得前端开发更加高效和便捷。
+
+项目主要有两个页面，首先是登录注册页面，完成了基本的登录注册功能。
+
+![image-20230625001722894](REPORT/image-20230625001722894.png)
+
+游戏页面主要分为四个区域，分别是房间信息、房间物品、操作区域、背包物品区域。
+
+![image-20230625002416370](REPORT/image-20230625002416370.png)
+
+1. 房间信息区域介绍了房间的名称、可以前进的方向、房间信息和房间图片。
+2. 房间物品区域展示房间当前的物品，包括物品名称、重量、可否使用和可进行的操作。
+3. 操作区域可以控制玩家移动、回退若干层和触发特殊事件。
+4. 背包物品区域展示了背包内的物品信息、玩家的拾取上限和物品重量。
+
+在编写代码的过程中将这些区域封装成了一个个组件，使用组件化开发使代码更清晰。
+
+![image-20230625002500437](E:/File/IdeaProjects/Whut/Course/grade3b/software-engineering-practice/sept2-pure/REPORT/image-20230625002500437.png)

@@ -2,5 +2,5 @@ spring:
   datasource:
     username: root
     password: xcj2011@abc
-    url: jdbc:mysql://localhost:3306/zuul?serverTimezone=UTC
+    url: jdbc:mysql://47.98.165.189:3306/zuul?serverTimezone=UTC
 #   url: jdbc:mysql://127.0.0.1:3306/zuul?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&useAffectedRows=true
