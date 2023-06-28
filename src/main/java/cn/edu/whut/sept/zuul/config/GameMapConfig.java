@@ -18,7 +18,7 @@ import java.util.Map;
 /**
  * @author AnthonyCJ
  * @version 1.0
- * @description TODO
+ * @description 地图配置类，用于生成一个单例Maze类，作为本游戏的地图，在此处进行单例Maze对象的配置
  * @date 2023/06/25 13:42
  */
 @Configuration

@@ -14,7 +14,7 @@ import java.util.Map;
 /**
  * @author AnthonyCJ
  * @version 1.0
- * @description TODO
+ * @description Room类，房间类，用于关联其他房间，作为地图GameMap类的结点
  * @date 2023/06/18 12:29
  */
 @Data
